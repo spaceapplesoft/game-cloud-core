@@ -2,17 +2,23 @@
 
 namespace GameCloud.Core
 {
+    /// <summary>
+    /// Game cloud server
+    /// </summary>
     public class GcServer
     {
-        public int Port { get; }
+        public IServerImplementation Implementation { get; }
 
-        public GcServer(int port)
+        public int Port { get; private set; }
+
+        public GcServer(IServerImplementation implementation)
         {
-            Port = port;
+            Implementation = implementation;
         }
 
-        public GcServer Start()
+        public GcServer Start(int port)
         {
+            Port = port;
             return this;
         }
 

@@ -1,6 +1,6 @@
 ﻿namespace GameCloud.Core
 {
-    public interface IServer
+    public class Client
     {
         
     }

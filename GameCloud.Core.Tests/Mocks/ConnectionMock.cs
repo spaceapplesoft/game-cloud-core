@@ -2,18 +2,25 @@
 
 namespace GameCloud.Core.Tests.Mocks
 {
-    public class ClientMock : IClient
+    public class ConnectionMock : IConnectionImplementation
     {
         private readonly GcServer _server;
 
-        public ClientMock(GcServer server)
+        private RemoteConnection _connection;
+
+        /// <summary>
+        /// </summary>
+        /// <param name="server">Server, to which we'll fake a connection</param>
+        /// <param name="connection">Connection, which will be the fake connection to the server</param>
+        public ConnectionMock(GcServer server, RemoteConnection connection)
         {
             _server = server;
+            _connection = connection;
         }
 
         public void SendRawData(byte[] data)
         {
-            throw new System.NotImplementedException();
+            _server.Implementation.HandleRawData(_connection, data);
         }
 
         public Task<bool> Connect(string host, int port)

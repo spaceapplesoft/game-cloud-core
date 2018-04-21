@@ -2,7 +2,7 @@
 
 namespace GameCloud.Core
 {
-    public interface IClient
+    public interface IConnectionImplementation
     {
         void SendRawData(byte[] data);
 
