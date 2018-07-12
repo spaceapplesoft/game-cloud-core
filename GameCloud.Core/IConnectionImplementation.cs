@@ -1,4 +1,5 @@
-﻿using System.Threading.Tasks;
+﻿using System;
+using System.Threading.Tasks;
 
 namespace GameCloud.Core
 {
@@ -6,7 +7,11 @@ namespace GameCloud.Core
     {
         void SendRawData(byte[] data);
 
+        event Action<byte[]> DataReceived;
+        event Action Disconnected;
+
         Task<bool> Connect(string host, int port);
         Task<bool> Connect(string host, int port, out string error);
+        void Disconnect();
     }
 }

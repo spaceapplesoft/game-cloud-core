@@ -3,35 +3,38 @@ using System.Threading;
 
 namespace GameCloud.Core.Tests.Mocks
 {
-    public delegate void RawDataHandler(RemoteConnection sender, byte[] data);
-
     public class ServerImplementationMock : IServerImplementation
     {
-        private RawDataHandler _handler;
+        private int _remoteIdGenerator = 1;
 
-        private int _remoteIdGenerator;
+        public event RawDataHandler RawDataReceived;
 
-        public void HandleRawData(byte[] data)
+        public void HandleRawData(PeerConnection sender, byte[] data)
         {
+            RawDataReceived?.Invoke(sender, data);
         }
 
-        public void ChangeRawDataHandler(RawDataHandler handler)
+        public (RemoteConnectionImplementationMock, PeerConnection) MockClientToServerLink()
         {
-            _handler = handler;
+            var remoteId = Interlocked.Increment(ref _remoteIdGenerator);
+            var remoteConImplementation = new RemoteConnectionImplementationMock();
+            var connection = new PeerConnection(remoteId, remoteConImplementation);
+
+
+            return (remoteConImplementation, connection);
         }
 
-        public void HandleRawData(RemoteConnection sender, byte[] data)
+        public void MockDisconnect(PeerConnection connection)
         {
-            // If we have a custom raw data handler, invoke it
-            if (_handler != null)
-            {
-                _handler.Invoke(sender, data);
-            }
+            ConnectionLost?.Invoke(connection);
         }
+   
+        public event ConnectionEventHandler ConnectionReceived;
+        public event ConnectionEventHandler ConnectionLost;
 
-        public RemoteConnection MockRemoteConnection()
+        public void MockConnectedPeer(PeerConnection connection)
         {
-            return new RemoteConnection(Interlocked.Increment(ref _remoteIdGenerator));
+            ConnectionReceived?.Invoke(connection);
         }
     }
 }
