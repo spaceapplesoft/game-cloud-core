@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using GameCloud.Core.Tests.Mocks;
@@ -23,14 +25,8 @@ namespace GameCloud.Core.Tests
 
             _serverMock = new ServerImplementationMock();
             _server = new GcServer(_serverMock, logger).Start(500);
-
-            var clientToServer = _serverMock.MockClientToServerLink();
-            // Create a link from client to server
-            var connectionMock = new ConnectionMock(_serverMock, clientToServer.Item2);
-            // Create a link from server to client
-            clientToServer.Item1.SetConnectionMock(connectionMock);
-            _connection = new GcConnection(connectionMock);
             
+            _connection = TestUtils.CreateMockConnection(_serverMock);
         }
 
         [Fact]
@@ -39,6 +35,53 @@ namespace GameCloud.Core.Tests
             var isConnected = await _connection.ConnectTo("127.0.0.1", _server.Port);
 
             Assert.True(isConnected);
+        }
+
+        [Fact]
+        public async Task MultipleClientsConnectToServer()
+        {
+            var connectionCount = 10;
+            
+            // ----------------------
+            // Check if server gets all peers
+            var peersTestSource = new TaskCompletionSource<bool>();
+            var joinedPeerIds = new List<int>();
+            _server.PeerJoined += peer =>
+            {
+                if (joinedPeerIds.Contains(peer.PeerId))
+                {
+                    // Same peer id was generated
+                    throw new Exception("Same peer id generated");
+                }
+                joinedPeerIds.Add(peer.PeerId);
+
+                if (joinedPeerIds.Count == connectionCount)
+                {
+                    peersTestSource.SetResult(true);
+                }
+            };
+            
+            // ----------------------
+            // Check if all connections are established
+            
+            var connections = new List<GcConnection>();
+            
+            for (var i = 0; i < connectionCount; i++)
+            {
+                var connection = TestUtils.CreateMockConnection(_serverMock);
+                connections.Add(connection);
+            }
+
+            // Wait for all connections to be established
+            var results = await Task.WhenAll(connections.Select(c => c.ConnectTo("127.0.0.1", _server.Port)));
+
+            foreach (var result in results)
+            {
+                Assert.True(result);
+            }
+            
+            // Wait for all peerjoined events to be triggered
+            Assert.True(await peersTestSource.Task);
         }
 
         [Fact]
