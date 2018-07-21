@@ -46,6 +46,8 @@ namespace GameCloud.Core.Tests
             var client = TestUtils.CreateMockConnection(_serverAMock);
             var aToB = TestUtils.CreateMockConnection(_serverBMock);
 
+            Console.WriteLine("TEST");
+            
             // -------------------------------------------
             // SETUP CONNECTIONS
             

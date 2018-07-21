@@ -51,8 +51,6 @@ namespace GameCloud.Core
             SetHandler((short) InternalOpCodes.EstablishPeer, HandleEstablishPeer);
         }
 
-        
-
         private void OnConnectionReceived(PeerConnection connection)
         {
             var peerId = Interlocked.Increment(ref _peerIdGenerator);
@@ -260,7 +258,7 @@ namespace GameCloud.Core
                 message.Peer.SetPeerIdInRelayedServer(assignedPeerId, connection);
                 
                 // For "backwarding" messages
-                connection.RememberRelayedPeer(assignedPeerId, message.Peer);
+                connection.SaveRelayedPeer(assignedPeerId, message.Peer);
             }
 
             if (isDirectMessage)
@@ -290,6 +288,28 @@ namespace GameCloud.Core
                 throw new Exception("Cannot relay to a connection which is closed");
 
             _relayConnections.TryAdd(opCode, connection);
+
+            connection.InterceptIncomingData(data =>
+            {
+                var flags = data[0];
+                
+                // There's no peer id
+                if ((flags & MessageFlags.PaddedPeerId) <= 0)
+                    return false;
+                
+                var peerId = EndianBitConverter.Little.ToInt32(data, 3);
+                
+                var peer = connection.GetRelayedPeer(peerId);
+                
+                // Overide the peerId of the message
+                // If it's not a virtual peer, but a direct one - 
+                // cleanup the peer id so that direct client doesn't know his id
+                EndianBitConverter.Little.CopyBytes(peer.IsVirtual ? peer.PeerId : -1, data, 3);
+                
+                peer.SendRawData(data);
+                
+                return true;
+            });
         }
 
         public void SetHandler(short opCode, MessageHandler handler)

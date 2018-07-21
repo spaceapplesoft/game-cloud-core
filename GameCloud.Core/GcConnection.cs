@@ -13,6 +13,12 @@ namespace GameCloud.Core
     {
         public delegate void DisconnectHandler(GcConnection connection);
 
+        /// <summary>
+        /// Returns true if message was intercepted
+        /// </summary>
+        /// <param name="data"></param>
+        public delegate bool InterceptionHandler(byte[] data);
+        
         public static bool EnableRelays = true;
         public static int EstablishPeerTimeoutMillis = 10000;
         public static int RequestTimeoutMillis = 30 * 1000;
@@ -28,7 +34,6 @@ namespace GameCloud.Core
 
         public IConnectionImplementation Implementation { get; }
         
-        
         private NetWriter _writer;
 
         private object _establishPeerLock = new object();
@@ -43,7 +48,8 @@ namespace GameCloud.Core
         private int _port;
 
         private ConcurrentDictionary<int, GcPeer> _relayedPeers;
-        
+        private InterceptionHandler _interceptionHandler;
+
         public GcConnection(IConnectionImplementation implementation)
         {
             // Generate instance id for better hashing
@@ -74,11 +80,22 @@ namespace GameCloud.Core
             Disconnected?.Invoke(this);
         }
 
+        
+        public void InterceptIncomingData(InterceptionHandler handler)
+        {
+            _interceptionHandler = handler;
+        }
+        
         private void OnDataReceived(byte[] data)
         {
+            // Ignore empty data
             if (data.Length == 0)
                 return;
 
+            // Ignore intercepted data
+            if (_interceptionHandler != null && _interceptionHandler(data))
+                return;
+            
             var flags = data[0];
 
             if ((flags & MessageFlags.InternalMessage) > 0)
@@ -198,9 +215,15 @@ namespace GameCloud.Core
         /// <param name="peerId"></param>
         /// <param name="peer"></param>
         /// <exception cref="NotImplementedException"></exception>
-        public void RememberRelayedPeer(int peerId, GcPeer peer)
+        internal void SaveRelayedPeer(int peerId, GcPeer peer)
         {
             _relayedPeers.TryAdd(peerId, peer);
+        }
+
+        internal GcPeer GetRelayedPeer(int peerId)
+        {
+            _relayedPeers.TryGetValue(peerId, out var peer);
+            return peer;
         }
     }
 }

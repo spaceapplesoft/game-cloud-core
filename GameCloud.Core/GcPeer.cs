@@ -16,7 +16,10 @@ namespace GameCloud.Core
         public event GcServer.PeerEventHandler Disconnected;
         private bool _isDisconnected;
 
-        private bool _isVirtual;
+        /// <summary>
+        /// If it's a virutal peer, it means that it's part of a "relay" chain
+        /// </summary>
+        public bool IsVirtual { get; }
         
         /// <summary>
         /// Peer, through which we're relaying this virtual peer
@@ -37,7 +40,7 @@ namespace GameCloud.Core
             _relayedPeerIds = new Dictionary<GcConnection, int>();
             PeerId = peerId;
 
-            _isVirtual = true;
+            IsVirtual = true;
             _concretePeer = concretePeer;
         }
         
@@ -58,13 +61,14 @@ namespace GameCloud.Core
             
             byte[] data;
 
-            if (!_isVirtual)
+            if (!IsVirtual)
             {
                 lock (_writer)
                 {
                     GcProtocol.PackMessage(_writer, opCode, writeAction, requestId, responseId, status, null, defaultFlags);
                     data = _writer.ToArray();
                 }
+                _connection.SendRawData(data);
             }
             else
             {
@@ -73,8 +77,13 @@ namespace GameCloud.Core
                     GcProtocol.PackMessage(_writer, opCode, writeAction, requestId, responseId, status, PeerId, defaultFlags);
                     data = _writer.ToArray();
                 }
+                _concretePeer.SendRawData(data);
             }
             
+        }
+
+        internal void SendRawData(byte[] data)
+        {
             _connection.SendRawData(data);
         }
 
