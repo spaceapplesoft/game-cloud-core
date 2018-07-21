@@ -143,5 +143,63 @@ namespace GameCloud.Core.Tests
             Assert.True(responseNumber == numberToSend);
         }
         
+        
+        /// <summary>
+        /// Client -> ServerA -> ServerB -> ServerC -> ServerB -> SerberA -> Client
+        /// </summary>
+        /// <returns></returns>
+        [Fact]
+        public async Task DoubleRelay()
+        {
+            const short opCode = 10;
+            var numberToSend = 777;
+            
+            var client = TestUtils.CreateMockConnection(_serverAMock);
+            var aToB = TestUtils.CreateMockConnection(_serverBMock);
+            var bToC = TestUtils.CreateMockConnection(_serverCMock);
+
+            // -------------------------------------------
+            // SETUP CONNECTIONS
+            
+            // Connect Client -> ServerA
+            Assert.True(await client.ConnectTo("127.0.0.1", _serverA.Port));
+            
+            // Connect ServerA -> ServerB
+            Assert.True(await aToB.ConnectTo("127.0.0.1", _serverB.Port));
+
+            // Connect ServerB -> ServerC
+            Assert.True(await bToC.ConnectTo("127.0.0.1", _serverB.Port));
+            
+            // Register a relay
+            _serverA.RelayTo(opCode, aToB);
+            _serverB.RelayTo(opCode, bToC);
+            
+            // Handle the message on server B
+            _serverC.SetHandler(opCode, message =>
+            {
+                message.Reader.ReadString();
+                var number = message.Reader.ReadInt32();
+                message.Respond(ResponseStatus.Success, w => w.Write(number));
+                return Task.CompletedTask;
+            });
+            
+            // -------------------------------------------
+            // ESTABLISH THE PEER
+
+            var isEstablished = await client.EstablishPeer(TimeSpan.FromSeconds(5));
+            
+            Assert.True(isEstablished);
+            
+            // -------------------------------------------
+            // SEND THE MESSAGE
+            
+            // Send the message
+            var response = await client.SendRequest(opCode, writer => writer.Write("Str").Write(numberToSend));
+
+            var responseNumber = response.Reader.ReadInt32();
+            
+            Assert.True(responseNumber == numberToSend);
+        }
+        
     }
 }

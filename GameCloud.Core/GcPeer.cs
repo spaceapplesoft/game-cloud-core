@@ -84,7 +84,18 @@ namespace GameCloud.Core
 
         internal void SendRawData(byte[] data)
         {
-            _connection.SendRawData(data);
+            if (_isDisconnected)
+                return;
+            
+            if (!IsVirtual)
+            {
+                _connection.SendRawData(data);
+            }
+            else
+            {
+                _concretePeer.SendRawData(data);
+            }
+            
         }
 
         public void OnDisconnected()

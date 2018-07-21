@@ -214,12 +214,14 @@ namespace GameCloud.Core
         {
             var peerId = message.Reader.ReadInt32();
             var isDirectMessage = peerId < 0;
+            GcPeer peer = null;
             
             if (isDirectMessage)
             {
                 // This is a direct message from client
                 // who can't know his peer id
                 peerId = message.Peer.PeerId;
+                peer = message.Peer;
             }
             else
             {
@@ -232,6 +234,7 @@ namespace GameCloud.Core
                 
                 // Add the newly created peer id
                 peerId = vPeer.PeerId;
+                peer = vPeer;
             }
             
             // Send messages to all of the relayed servers to establish a peer in them
@@ -255,10 +258,10 @@ namespace GameCloud.Core
                 var assignedPeerId = response.Reader.ReadInt32();
 
                 // For forwarding messages
-                message.Peer.SetPeerIdInRelayedServer(assignedPeerId, connection);
+                peer.SetPeerIdInRelayedServer(assignedPeerId, connection);
                 
                 // For "backwarding" messages
-                connection.SaveRelayedPeer(assignedPeerId, message.Peer);
+                connection.SaveRelayedPeer(assignedPeerId, peer);
             }
 
             if (isDirectMessage)
