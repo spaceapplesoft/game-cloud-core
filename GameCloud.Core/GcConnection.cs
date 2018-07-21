@@ -13,6 +13,7 @@ namespace GameCloud.Core
     {
         public delegate void DisconnectHandler(GcConnection connection);
 
+        public static bool EnableRelays = true;
         public static int EstablishPeerTimeoutMillis = 10000;
         public static int RequestTimeoutMillis = 30 * 1000;
 
@@ -26,7 +27,8 @@ namespace GameCloud.Core
         private int _requestId;
 
         public IConnectionImplementation Implementation { get; }
-
+        
+        
         private NetWriter _writer;
 
         private object _establishPeerLock = new object();
@@ -35,12 +37,19 @@ namespace GameCloud.Core
         private ConcurrentDictionary<int, TaskCompletionSource<GcMessage>> _responseCallbacks;
 
         private GcMessage _timeoutMessage;
-        public event DisconnectHandler Disconnected; 
+        public event DisconnectHandler Disconnected;
 
+        private string _address;
+        private int _port;
+
+        private ConcurrentDictionary<int, GcPeer> _relayedPeers;
+        
         public GcConnection(IConnectionImplementation implementation)
         {
             // Generate instance id for better hashing
             _instanceId = Interlocked.Increment(ref _instanceIdGenerator);
+            
+            _relayedPeers = new ConcurrentDictionary<int, GcPeer>();
             _responseCallbacks = new ConcurrentDictionary<int, TaskCompletionSource<GcMessage>>();
             _timeoutMessage = new GcMessage(null, 0)
             {
@@ -53,6 +62,11 @@ namespace GameCloud.Core
             implementation.Disconnected += OnDisconnected;
 
             _writer = new NetWriter();
+        }
+        
+        public bool IsConnected
+        {
+            get { return Implementation.IsConnected; }
         }
 
         private void OnDisconnected()
@@ -88,24 +102,17 @@ namespace GameCloud.Core
             }
 
             // TODO Handle a regular message
+            throw new NotImplementedException("Regular message not yet handled");
         }
 
         private void HandleInternalMessage(byte[] data)
         {
-            // Received confirmation of peer establishment
-            if (data.Length >= 3 && data[1] == (byte) InternalOpCode.EstablishPeer)
-            {
-                var stats = data[2];
-                lock (_establishPeerLock)
-                {
-                    _establishPeerSource?.TrySetResult(stats == 1);
-                }
-            }
+   
         }
 
         public void Send(short opCode, Action<NetWriter> writeAction)
         {
-            SendBasicMessage(opCode, writeAction, null, null, null, null);
+            SendBasicMessage(opCode, writeAction, null, null, null, EnableRelays ? (int?) -1 : null);
         }
 
         public async Task<GcMessage> SendRequest(short opCode, Action<NetWriter> writeAction)
@@ -136,15 +143,14 @@ namespace GameCloud.Core
             Implementation.SendRawData(data);
         }
 
-        public async Task StartTimeout(TaskCompletionSource<GcMessage> source, int requestId, int timeoutMillis)
+        private async Task StartTimeout(TaskCompletionSource<GcMessage> source, int requestId, int timeoutMillis)
         {
             await Task.WhenAny(source.Task, Task.Delay(timeoutMillis));
 
             if (source.Task.IsCompleted)
                 return;
 
-            TaskCompletionSource<GcMessage> removedSource;
-            if (_responseCallbacks.TryRemove(requestId, out removedSource))
+            if (_responseCallbacks.TryRemove(requestId, out var removedSource))
             {
                 removedSource.TrySetResult(_timeoutMessage);
             }
@@ -152,44 +158,22 @@ namespace GameCloud.Core
 
         public async Task<bool> EstablishPeer(TimeSpan timeout)
         {
-            TaskCompletionSource<bool> source;
-            var sendRequest = false;
+            var response = await SendRequest((short)InternalOpCodes.EstablishPeer, w => w.Write(-1));
 
-            lock (_establishPeerLock)
-            {
-                source = _establishPeerSource;
-
-                if (source == null)
-                {
-                    // Source is null - thre are no pending requests
-                    source = new TaskCompletionSource<bool>();
-                    _establishPeerSource = source;
-                    sendRequest = true;
-                }
-            }
-
-            if (sendRequest)
-            {
-                // Send a request to establish peer
-                Implementation.SendRawData(new [] { MessageFlags.InternalMessage, (byte)InternalOpCode.EstablishPeer });
-            }
-            
-            // Wait for confirmation or timeout
-            await Task.WhenAny(source.Task, Task.Delay(EstablishPeerTimeoutMillis));
-
-            if (source.Task.IsCompleted)
-                return source.Task.Result;
-
-            return false;
+            return response.Status == ResponseStatus.Success;
         }
 
         public Task<bool> ConnectTo(string host, int port)
         {
+            _address = host;
+            _port = port;
             return Implementation.Connect(host, port);
         }
 
         public Task<bool> ConnectTo(string host, int port, out string error)
         {
+            _address = host;
+            _port = port;
             return Implementation.Connect(host, port, out error);
         }
 
@@ -201,6 +185,22 @@ namespace GameCloud.Core
         public void Disconnect()
         {
             Implementation.Disconnect();
+        }
+
+        public override string ToString()
+        {
+            return $"[Connection | {_address}:{_port}]";
+        }
+
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="peerId"></param>
+        /// <param name="peer"></param>
+        /// <exception cref="NotImplementedException"></exception>
+        public void RememberRelayedPeer(int peerId, GcPeer peer)
+        {
+            _relayedPeers.TryAdd(peerId, peer);
         }
     }
 }

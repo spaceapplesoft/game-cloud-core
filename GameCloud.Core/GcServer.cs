@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using GameCloud.Core.Utils.Conversion;
@@ -46,7 +47,11 @@ namespace GameCloud.Core
             implementation.RawDataReceived += OnRawDataReceived;
             implementation.ConnectionReceived += OnConnectionReceived;
             implementation.ConnectionLost += OnConnectionLost;
+            
+            SetHandler((short) InternalOpCodes.EstablishPeer, HandleEstablishPeer);
         }
+
+        
 
         private void OnConnectionReceived(PeerConnection connection)
         {
@@ -139,11 +144,13 @@ namespace GameCloud.Core
                     {
                         // Write relayed peer id into the messages peerId padding
                         var relayedId = peer.GetPeerIdInRelayedServer(connectionToRelay);
-
+                        
                         // Ignore if peer doesn't have an established peer id
                         if (relayedId < 0)
                             return;
 
+                        // TODO Do this only if there's a peerId padding, otherwise - reconstruct the whole thing
+                        // Add a peer id 
                         EndianBitConverter.Little.CopyBytes(relayedId, data, 3);
 
                         // Pass the data
@@ -204,25 +211,85 @@ namespace GameCloud.Core
                 }
             });
         }
+        
+        private async Task HandleEstablishPeer(GcMessage message)
+        {
+            var peerId = message.Reader.ReadInt32();
+            var isDirectMessage = peerId < 0;
+            
+            if (isDirectMessage)
+            {
+                // This is a direct message from client
+                // who can't know his peer id
+                peerId = message.Peer.PeerId;
+            }
+            else
+            {
+                // This is a message that was already relayed at least once
+                // We need to create a virtual peer which will be used in this server
+                var vPeer = new GcPeer(Interlocked.Increment(ref _peerIdGenerator), message.Peer);
+                
+                _peers.TryAdd(vPeer.PeerId, vPeer);
+                PeerJoined?.Invoke(vPeer);
+                
+                // Add the newly created peer id
+                peerId = vPeer.PeerId;
+            }
+            
+            // Send messages to all of the relayed servers to establish a peer in them
+            var connections = _relayConnections.Values.Distinct().Where(c => c.IsConnected);
 
-        private void HandleInternalMessage(PeerConnection sender, byte[] data)
+            var allSuccessful = true;
+            
+            // Do it "linearly" (one by one) because it's a lot easier to handle
+            foreach (var connection in connections)
+            {
+                var response =
+                    await connection.SendRequest((short) InternalOpCodes.EstablishPeer, w => w.Write(peerId));
+                
+                if (response.Status != ResponseStatus.Success)
+                {
+                    _logger.LogWarning("Failed to establish a peer in connection: " + connection);
+                    allSuccessful = false;
+                    continue;
+                }
+                
+                var assignedPeerId = response.Reader.ReadInt32();
+
+                // For forwarding messages
+                message.Peer.SetPeerIdInRelayedServer(assignedPeerId, connection);
+                
+                // For "backwarding" messages
+                connection.RememberRelayedPeer(assignedPeerId, message.Peer);
+            }
+
+            if (isDirectMessage)
+            {
+                message.Respond(allSuccessful ? ResponseStatus.Success : ResponseStatus.Failed);
+            }
+            else
+            {
+                message.Respond(ResponseStatus.Success, w => w.Write(peerId));
+            }
+            
+        }
+
+        /// <summary>
+        /// Override if you want a fine-control of how to handle the messages
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="data"></param>
+        protected virtual void HandleInternalMessage(PeerConnection sender, byte[] data)
         {
             
         }
 
-        public Task<bool> RelayTo(string host, int port)
+        public void RelayTo(short opCode, GcConnection connection)
         {
-            throw new System.NotImplementedException();
-        }
+            if (!connection.IsConnected)
+                throw new Exception("Cannot relay to a connection which is closed");
 
-        public Task<bool> RelayTo(short opCode, string host, int port)
-        {
-            throw new System.NotImplementedException();
-        }
-
-        public Task<bool> RelayTo(short opCodeFrom, short opCodesTo, string host, int port)
-        {
-            throw new System.NotImplementedException();
+            _relayConnections.TryAdd(opCode, connection);
         }
 
         public void SetHandler(short opCode, MessageHandler handler)

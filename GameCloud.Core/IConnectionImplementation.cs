@@ -13,5 +13,6 @@ namespace GameCloud.Core
         Task<bool> Connect(string host, int port);
         Task<bool> Connect(string host, int port, out string error);
         void Disconnect();
+        bool IsConnected { get;}
     }
 }

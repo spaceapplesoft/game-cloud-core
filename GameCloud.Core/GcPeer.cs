@@ -13,9 +13,16 @@ namespace GameCloud.Core
 
         private NetWriter _writer;
 
-        public GcServer.PeerEventHandler Disconnected;
+        public event GcServer.PeerEventHandler Disconnected;
         private bool _isDisconnected;
 
+        private bool _isVirtual;
+        
+        /// <summary>
+        /// Peer, through which we're relaying this virtual peer
+        /// </summary>
+        private GcPeer _concretePeer;
+        
         public GcPeer(int peerId, PeerConnection connection)
         {
             _writer = new NetWriter();
@@ -24,7 +31,15 @@ namespace GameCloud.Core
             PeerId = peerId;
         }
 
-        public bool IsRelayed { get; }
+        public GcPeer(int peerId, GcPeer concretePeer)
+        {
+            _writer = new NetWriter();
+            _relayedPeerIds = new Dictionary<GcConnection, int>();
+            PeerId = peerId;
+
+            _isVirtual = true;
+            _concretePeer = concretePeer;
+        }
         
         public int GetPeerIdInRelayedServer(GcConnection connection)
         {
@@ -43,13 +58,23 @@ namespace GameCloud.Core
             
             byte[] data;
 
-            lock (_writer)
+            if (!_isVirtual)
             {
-                var peerId = IsRelayed ? PeerId : (int?) null;
-                GcProtocol.PackMessage(_writer, opCode, writeAction, requestId, responseId, status, peerId, defaultFlags);
-                data = _writer.ToArray();
+                lock (_writer)
+                {
+                    GcProtocol.PackMessage(_writer, opCode, writeAction, requestId, responseId, status, null, defaultFlags);
+                    data = _writer.ToArray();
+                }
             }
-
+            else
+            {
+                lock (_writer)
+                {
+                    GcProtocol.PackMessage(_writer, opCode, writeAction, requestId, responseId, status, PeerId, defaultFlags);
+                    data = _writer.ToArray();
+                }
+            }
+            
             _connection.SendRawData(data);
         }
 
@@ -57,6 +82,17 @@ namespace GameCloud.Core
         {
             _isDisconnected = true;
             Disconnected?.Invoke(this);
+        }
+
+        /// <summary>
+        /// For forwarding messages.
+        /// Saves information that this peer will be represented by a given peerId in a different server
+        /// </summary>
+        /// <param name="peerId"></param>
+        /// <param name="connection"></param>
+        public void SetPeerIdInRelayedServer(int peerId, GcConnection connection)
+        {
+            _relayedPeerIds.TryAdd(connection, peerId);
         }
     }
 }

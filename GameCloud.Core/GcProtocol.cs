@@ -65,7 +65,7 @@ namespace GameCloud.Core
             if ((flags & MessageFlags.PaddedPeerId) > 0)
             {
                 // Read padded peer id
-                var peerId = reader.ReadInt32();
+                reader.ReadInt32();
             }
 
             var msg = new GcMessage(peer, flags)

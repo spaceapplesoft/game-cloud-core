@@ -3,6 +3,9 @@ using System.Threading.Tasks;
 
 namespace GameCloud.Core.Tests.Mocks
 {
+    /// <summary>
+    /// Represents a mocked connection to server
+    /// </summary>
     public class ConnectionMock : IConnectionImplementation
     {
         private readonly ServerImplementationMock _server;
@@ -43,6 +46,8 @@ namespace GameCloud.Core.Tests.Mocks
             error = null;
 
             _server.MockConnectedPeer(_connection);
+
+            IsConnected = true;
             
             return Task.FromResult(true);
         }
@@ -50,6 +55,9 @@ namespace GameCloud.Core.Tests.Mocks
         public void Disconnect()
         {
             _server.MockDisconnect(_connection);
+            IsConnected = false;
         }
+
+        public bool IsConnected { get; private set; }
     }
 }

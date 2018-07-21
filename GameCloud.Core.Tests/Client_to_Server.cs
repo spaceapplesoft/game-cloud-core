@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.InteropServices.ComTypes;
 using System.Threading;
 using System.Threading.Tasks;
 using GameCloud.Core.Tests.Mocks;
@@ -127,17 +128,20 @@ namespace GameCloud.Core.Tests
         {
             await _connection.ConnectTo("127.0.0.1", _server.Port);
 
+            const int nubmerToSend = 777;
             var completionSource = new TaskCompletionSource<bool>();
 
             // Handle the message
             _server.SetHandler(5, message =>
             {
-                completionSource.SetResult(true);
+                message.Reader.ReadString();
+                var number = message.Reader.ReadInt32();
+                completionSource.SetResult(number == nubmerToSend);
                 return Task.CompletedTask;
             });
 
             // Send the message
-            _connection.Send(5, writer => writer.Write("String").Write(10));
+            _connection.Send(5, writer => writer.Write("String").Write(nubmerToSend));
 
             var isDataReceived = await completionSource.Task;
 
